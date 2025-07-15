@@ -15,7 +15,10 @@ const WIZARD_STATS := preload("res://characters/wizard/wizard.tres")
 
 var current_character: CharacterStats : set = set_current_character
 
-var current_prompt_id: String = ""
+var current_image_prefix := ""
+var poll_timer := 0.0
+const POLL_INTERVAL := 1.0  # Check every 1 second
+const MAX_POLL_TIME := 30.0
 
 func _ready() -> void:
 	set_current_character(WARRIOR_STATS)
@@ -81,8 +84,13 @@ func _on_request_completed(result, response_code, headers, body):
 			return
 			
 		var response = json["choices"][0]["message"]["content"]
-		print(response)
-		var comfy_payload = {
+		_send_to_comfy(response)
+	else:
+		print("Prompt error: ", response_code)
+		
+func _send_to_comfy(prompt_text: String):
+	current_image_prefix = "godot_sprite_%s" % Time.get_unix_time_from_system()
+	var comfy_payload = {
 		  "prompt": {
 			"1": {
 			  "inputs": {
@@ -115,7 +123,7 @@ func _on_request_completed(result, response_code, headers, body):
 			},
 			"4": {
 			  "inputs": {
-				"text": response,
+				"text": prompt_text,
 				"clip": ["1", 1]
 			  },
 			  "class_type": "CLIPTextEncode"
@@ -152,103 +160,72 @@ func _on_request_completed(result, response_code, headers, body):
 			}
 		  },
 		  "client_id": "GodotGameEngine" 
-		}
+		}	
 		
-		var comfy_request = HTTPRequest.new()
-		add_child(comfy_request)
-		comfy_request.request_completed.connect(_on_prompt_submitted)
-		comfy_request.request(
-			"http://localhost:8000/prompt",
-			["Content-Type: application/json"],
-			HTTPClient.METHOD_POST,
-			JSON.stringify(comfy_payload)
-		)
-	else:
-		print("Prompt error: ", response_code)
-
-func _on_prompt_submitted(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-	if response_code == 200:
-		var response = JSON.parse_string(body.get_string_from_utf8())
-		current_prompt_id = response["prompt_id"]
-		print(current_prompt_id)
-		
-		# Start polling for completion
-		_poll_history()
-
-func _poll_history():
-	var request = HTTPRequest.new()
-	add_child(request)
-	request.request_completed.connect(_on_history_checked)
-	request.request(
-		"http://localhost:8000/history/" + current_prompt_id,
-		[],
-		HTTPClient.METHOD_GET
+	var comfy_request = HTTPRequest.new()
+	add_child(comfy_request)
+	comfy_request.request_completed.connect(_on_prompt_submitted)
+	comfy_request.request(
+		"http://localhost:8000/prompt",
+		["Content-Type: application/json"],
+		HTTPClient.METHOD_POST,
+		JSON.stringify(comfy_payload)
 	)
 
-func _on_history_checked(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+func _on_prompt_submitted(result, response_code, headers, body):
 	if response_code == 200:
-		var history = JSON.parse_string(body.get_string_from_utf8())
-		print(history)
-		
-		if history.has(current_prompt_id):
-			var outputs = history[current_prompt_id].get("outputs", {})
-			
-			# Method 1: Find SaveImage node dynamically
-			var image_data = _find_image_output(outputs)
-			
-			# Method 2: Use known node ID with fallback
-			if outputs.has("7"):
-				var image_path = outputs["7"]["images"][0]["filename"]
-				_download_image(image_path)
-			else:
-				print("Error: SaveImage node (7) not found in outputs. Full response: ", outputs)
-				# Fallback: Scan all nodes for images
-				for node_id in outputs:
-					if outputs[node_id].has("images"):
-						_download_image(outputs[node_id]["images"][0]["filename"])
-						return
-				
-				print("No image nodes found. Still processing?")
-				await get_tree().create_timer(1.0).timeout
-				_poll_history()
-		else:
-			print("no such thing")
-
-# Helper function to find the first node with image output
-func _find_image_output(outputs: Dictionary):
-	for node_id in outputs:
-		var node_data = outputs[node_id]
-		if node_data.has("images") and node_data["images"].size() > 0:
-			return node_data["images"][0]["filename"]
-	return ""
-
-func _download_image(filename: String):
-	print("it reached download image")
-	var request = HTTPRequest.new()
-	add_child(request)
-	request.request_completed.connect(_on_image_downloaded)
-	
-	# Extract just the filename (remove ComfyUI's output folder path)
-	var image_name = filename.get_file()
-	request.request(
-		"http://localhost:8000/view?filename=" + image_name,
-		[],
-		HTTPClient.METHOD_GET
-	)
-
-func _on_image_downloaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-	print("it downloaded image?")
-	if response_code == 200:
-		var image = Image.new()
-		image.load_png_from_buffer(body)
-		
-		# Save to Godot's user folder
-		var save_path = "res://art/AIart/generated_sprite.png"
-		DirAccess.make_dir_recursive_absolute("user://")
-		image.save_png(save_path)
-		
-		# Display the image
-		var texture = ImageTexture.create_from_image(image)
+		print("Generation started, beginning file polling...")
+		var texture = load("res://art/AIart/wizard_00022_.png")
 		current_character.portrait = texture
+		poll_timer = 0.0
+		set_process(true)  # Enable polling
 	else:
-		print("Image download failed: ", response_code)
+		print("ComfyUI submission failed: ", response_code)
+
+func _process(delta):
+	poll_timer += delta
+	
+	if poll_timer >= POLL_INTERVAL:
+		poll_timer = 0.0
+		_check_for_image()
+	
+	if poll_timer >= MAX_POLL_TIME:
+		set_process(false)
+		print("Timeout waiting for image")
+
+func _check_for_image():
+	var expected_filename = "%s_00001.png" % current_image_prefix
+	var url = "http://localhost:8000/view?filename=%s" % expected_filename
+	
+	var request = HTTPRequest.new()
+	add_child(request)
+	request.request_completed.connect(_on_image_check_completed)
+	request.request(url, [], HTTPClient.METHOD_GET)
+
+func _on_image_check_completed(result, response_code, headers, body):
+	if response_code == 200:
+		set_process(false)  # Stop polling
+		_handle_generated_image(body)
+	elif response_code == 404:
+		# Image not ready yet, continue polling
+		pass
+	else:
+		print("Image check error: ", response_code)
+		set_process(false)
+
+func _handle_generated_image(image_data: PackedByteArray):
+	var image = Image.new()
+	var error = image.load_png_from_buffer(image_data)
+	
+	if error != OK:
+		print("Failed to load image")
+		return
+	
+	# Create texture and display it
+	var texture = ImageTexture.create_from_image(image)
+	current_character.portrait = texture
+	
+	# Optional: Save to Godot's user folder
+	var save_path = "user://generated/%s.png" % current_image_prefix
+	DirAccess.make_dir_recursive_absolute("user://generated/")
+	image.save_png(save_path)
