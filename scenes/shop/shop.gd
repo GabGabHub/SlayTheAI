@@ -166,7 +166,6 @@ func _on_dialogue_submitted(text: String) -> void:
 	dialogue_input.text = ""
 	response_label.text = "Shopkeeper: Thinking..."
 	
-	# Here you would make your HTTP request
 	_send_dialogue_request(text)
 
 func _send_dialogue_request(text: String) -> void:

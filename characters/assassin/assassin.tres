@@ -1,7 +1,7 @@
 [gd_resource type="Resource" script_class="CharacterStats" load_steps=6 format=3 uid="uid://dqohxugta8kvw"]
 
 [ext_resource type="Script" path="res://custom_resources/character_stats.gd" id="1_dd5x6"]
-[ext_resource type="Texture2D" uid="uid://cwf6dyi56tgo" path="res://art/tile_0088.png" id="1_qvpwy"]
+[ext_resource type="Texture2D" uid="uid://bcqq1uthvyibp" path="res://art/AIart/assasin.png" id="1_dfig1"]
 [ext_resource type="Resource" uid="uid://cno2mmhf4bjci" path="res://characters/warrior/warrior_draftable_cards.tres" id="2_gk7y8"]
 [ext_resource type="Resource" uid="uid://dyyfi3rcfxyug" path="res://characters/warrior/warrior_starting_deck.tres" id="3_4shk0"]
 [ext_resource type="Resource" uid="uid://r6aixmaucd4b" path="res://relics/wooden_sword.tres" id="5_i0tai"]
@@ -10,11 +10,11 @@
 script = ExtResource("1_dd5x6")
 character_name = "Assassin"
 description = "Sneaky lil' boi."
-portrait = ExtResource("1_qvpwy")
+portrait = ExtResource("1_dfig1")
 starting_deck = ExtResource("3_4shk0")
 draftable_cards = ExtResource("2_gk7y8")
 cards_per_turn = 5
 max_mana = 3
 starting_relic = ExtResource("5_i0tai")
 max_health = 24
-art = ExtResource("1_qvpwy")
+art = ExtResource("1_dfig1")
